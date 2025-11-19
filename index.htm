@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man Level - Sentuhan & Suara</title>
+    <!-- Memuat Tailwind CSS untuk styling modern -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.58/build/Tone.min.js"></script>
+    <style>
+        /* Gaya kustom untuk memastikan canvas berada di tengah dan responsif */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Latar belakang gelap */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            min-height: 10vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        /* Canvas akan memiliki ukuran yang ditentukan JS, tapi kita atur dasar visualnya */
+        #gameCanvas {
+            border: 4px solid #4a5568; /* Border tebal untuk frame game */
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            background-color: #000; /* Latar belakang maze hitam */
+        }
+
+        /* Container utama game */
+        #gameContainer {
+            width: fit-content;
+            max-width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Gaya tombol restart */
+        .game-button {
+            padding: 8px 16px;
+            background-color: #48BB78; /* Hijau */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .game-button:hover {
+            background-color: #38A169;
+        }
+
+        /* Gaya untuk konsol kontrol sentuh */
+        #touchControls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 200px; /* Lebar kontrol */
+            max-width: 100%;
+            user-select: none; /* Mencegah seleksi teks saat tap */
+        }
+
+        .control-button {
+            background-color: #4299E1; /* Biru terang */
+            color: white;
+            font-weight: bold;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px #2b6cb0; /* Bayangan 3D */
+            transition: all 0.1s ease;
+        }
+        
+        .control-button:active {
+            box-shadow: 0 1px #2b6cb0;
+            transform: translateY(3px);
+            background-color: #2c5282;
+        }
+        .control-button:focus {
+            outline: none;
+        }
+
+        /* Layout untuk tombol Kiri, Kanan, Bawah */
+        .horizontal-row {
+            display: flex;
+            justify-content: space-between;
+            width: 150px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <!-- Area untuk menampilkan skor dan level -->
+    <div class="mb-4 text-white text-xl font-bold flex justify-between w-full max-w-lg">
+        <span id="scoreText">Skor: 0</span>
+        <span id="levelText">Level: 1</span>
+    </div>
+
+    <!-- Canvas adalah tempat game akan digambar -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Pesan status/instruksi -->
+    <div id="messageBox" class="mt-4 p-3 bg-yellow-500 text-gray-900 font-semibold rounded-lg shadow-lg flex flex-col items-center">
+        <!-- Teks akan diisi oleh JS -->
+        <span id="messageText">Tekan tombol panah atau sentuh kontrol untuk memulai Level 1!</span>
+        <!-- Tombol Restart (Awalnya tersembunyi) -->
+        <button id="restartButton" class="game-button hidden">Mulai Ulang Level</button>
+    </div>
+
+    <!-- KONSOL KONTROL SENTUH -->
+    <div id="touchControls" class="md:hidden"> <!-- Sembunyikan di desktop, tampilkan di mobile -->
+        <!-- Tombol ATAS -->
+        <button class="control-button mb-2" data-direction="UP">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+        <!-- Tombol KIRI, BAWAH, KANAN -->
+        <div class="horizontal-row">
+            <button class="control-button" data-direction="LEFT">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l-7 7 7 7"/></svg>
+            </button>
+            <button class="control-button" data-direction="DOWN">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+            </button>
+            <button class="control-button" data-direction="RIGHT">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l7-7-7-7"/></svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Inisialisasi Firebase Global Variables (Wajib ada meskipun tidak digunakan saat ini)
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+    
+    // --- Konfigurasi Game & State Global ---
+    const TILE_SIZE = 30; // Ukuran setiap ubin (dinding/koridor) dalam piksel
+    const WALL_COLOR = '#3182CE'; // Warna biru untuk dinding
+    const PELLET_COLOR = '#F6E05E'; // Warna kuning untuk makanan/titik
+    const FRIGHTENED_COLOR = '#3498db'; // Warna hantu saat mode takut (biru)
+    const MOVE_SPEED = 2; // Kecepatan Pac-Man dalam piksel per frame
+    const GHOST_SPEED_NORMAL = 1.5; // Kecepatan Hantu Normal
+    const GHOST_SPEED_FRIGHTENED = 0.75; // Kecepatan Hantu saat Ketakutan (lebih lambat)
+    const FRIGHTENED_DURATION = 8000; // Durasi mode takut dalam milidetik (8 detik)
+
+    let score = 0;
+    let currentLevel = 1; 
+    let totalPellets = 0;
+    let currentDirection = null; 
+    let nextDirection = null;    
+    let isGameRunning = false;   
+    let maze = []; 
+
+    // State Power Pellet
+    let frightenedTimer = 0; // Waktu tersisa (ms)
+    let isFrightened = false; // Status mode takut
+
+    // NEW: Untuk animasi mulut Pac-Man
+    let mouthOpenState = 0; 
+    const mouthSpeed = 0.2; // Kecepatan buka/tutup mulut
+    
+    // Ukuran Peta
+    const rowCount = 11; 
+    const colCount = 15; 
+    const centerOffset = TILE_SIZE / 2; 
+
+    // --- Definisi Hantu (Template) ---
+    const GHOST_TEMPLATES = [
+        { color: '#E53E3E', name: 'Blinky', isEaten: false, originalColor: '#E53E3E' }, 
+        { color: '#319795', name: 'Inky', isEaten: false, originalColor: '#319795' },  
+        { color: '#F687B3', name: 'Pinky', isEaten: false, originalColor: '#F687B3' }, 
+        { color: '#DD6B20', name: 'Clyde', isEaten: false, originalColor: '#DD6B20' }  
+    ];
+    let ghosts = [];
+
+    // --- Definisi Multi-Level Peta (Disederhanakan) ---
+    // (Peta Level 1 sampai 5 yang sama dari versi sebelumnya)
+    const MAZES = [
+        null, 
+        [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 3, 1], 
+            [1, 2, 1, 1, 1, 2, 2, 1, 2, 2, 1, 1, 1, 2, 1],
+            [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1],
+            [1, 2, 1, 2, 1, 1, 8, 8, 8, 1, 1, 2, 1, 2, 1], 
+            [1, 2, 2, 2, 2, 0, 0, 9, 0, 0, 2, 2, 2, 2, 1], 
+            [1, 2, 1, 2, 1, 1, 0, 0, 0, 1, 1, 2, 1, 2, 1],
+            [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1],
+            [1, 2, 1, 1, 1, 2, 2, 1, 2, 2, 1, 1, 1, 2, 1],
+            [1, 3, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 3, 1], 
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 3, 1], 
+            [1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1],
+            [1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1],
+            [1, 1, 1, 2, 1, 2, 1, 8, 1, 2, 1, 2, 1, 1, 1], 
+            [1, 2, 2, 2, 0, 0, 0, 9, 0, 0, 0, 2, 2, 2, 1],
+            [1, 1, 1, 2, 1, 2, 1, 8, 1, 2, 1, 2, 1, 1, 1],
+            [1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1],
+            [1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1],
+            [1, 3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 3, 1], 
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 3, 1], 
+            [1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1, 2, 2, 1],
+            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            [1, 1, 1, 1, 1, 2, 1, 8, 1, 2, 1, 1, 1, 1, 1], 
+            [1, 2, 2, 2, 2, 0, 8, 9, 8, 0, 2, 2, 2, 2, 1], 
+            [1, 1, 1, 1, 1, 2, 1, 0, 1, 2, 1, 1, 1, 1, 1],
+            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            [1, 2, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1, 2, 2, 1],
+            [1, 3, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 3, 1], 
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 3, 1], 
+            [1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1],
+            [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1],
+            [1, 2, 1, 1, 1, 1, 8, 8, 8, 8, 1, 1, 1, 2, 1], 
+            [1, 2, 2, 2, 2, 0, 0, 9, 0, 0, 2, 2, 2, 2, 1], 
+            [1, 2, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 2, 1],
+            [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1],
+            [1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1],
+            [1, 3, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 3, 1], 
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 3, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 1, 3, 1], 
+            [1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1],
+            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            [1, 1, 1, 1, 1, 2, 8, 8, 8, 8, 2, 1, 1, 1, 1], 
+            [1, 2, 2, 2, 0, 0, 0, 9, 0, 0, 0, 2, 2, 2, 1], 
+            [1, 1, 1, 1, 1, 2, 1, 0, 1, 2, 1, 1, 1, 1, 1],
+            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            [1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1],
+            [1, 3, 1, 2, 2, 2, 1, 2, 1, 2, 2, 2, 1, 3, 1], 
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ]
+    ];
+
+
+    // --- Inisialisasi Canvas dan Konteks ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Mendapatkan elemen DOM
+    const messageBox = document.getElementById('messageBox');
+    const messageText = document.getElementById('messageText');
+    const restartButton = document.getElementById('restartButton');
+    
+    // Menentukan ukuran canvas berdasarkan peta dan ukuran ubin
+    canvas.width = colCount * TILE_SIZE;
+    canvas.height = rowCount * TILE_SIZE;
+
+
+    // --- Definisi Pac-Man ---
+    const pacman = {
+        x: 0, 
+        y: 0, 
+        radius: centerOffset - 2,
+        color: 'yellow',
+        dx: 0,
+        dy: 0,
+        angle: 0,
+        startGrid: { x: 0, y: 0 } 
+    };
+
+
+    // --- Konfigurasi Suara (Tone.js) ---
+    // Tone.js memerlukan interaksi pengguna sebelum dapat memutar audio.
+    let isAudioContextStarted = false;
+
+    // Synth untuk suara pellet (pendek, chirping)
+    const pelletSynth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: "square" },
+        envelope: { attack: 0.001, decay: 0.05, sustain: 0.0, release: 0.05 },
+        volume: -10 
+    }).toDestination();
+    
+    // Synth untuk Power Pellet (Low sustained tone)
+    const powerPelletSynth = new Tone.Synth({
+        oscillator: { type: "sine" },
+        envelope: { attack: 0.1, decay: 0.5, sustain: 0.5, release: 0.5 },
+        volume: -15
+    }).toDestination();
+    
+    // DuoSynth untuk Ghost Eaten (sound effect jingle)
+    const eatenSynth = new Tone.DuoSynth({
+        voice0: { volume: -15, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } },
+        voice1: { volume: -15, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }
+    }).toDestination();
+    
+    // NoiseSynth untuk Game Over (descending noise/sweep)
+    const gameOverSynth = new Tone.NoiseSynth({
+        noise: { type: "pink" },
+        envelope: { attack: 0.01, decay: 1.0, sustain: 0, release: 1.0 },
+        volume: -5
+    }).toDestination();
+
+
+    function startAudioContext() {
+        if (!isAudioContextStarted) {
+            Tone.start();
+            isAudioContextStarted = true;
+            console.log("Tone.js Audio Context dimulai.");
+        }
+    }
+
+    let pelletSoundCounter = 0;
+    const pelletNotes = ["C5", "E5"]; // Melodi sederhana
+    function playPelletSound() {
+        if (isAudioContextStarted) {
+            const note = pelletNotes[pelletSoundCounter % pelletNotes.length];
+            pelletSynth.triggerAttackRelease(note, "16n");
+            pelletSoundCounter++;
+        }
+    }
+
+    function playPowerPelletSound() {
+        if (isAudioContextStarted) {
+            powerPelletSynth.triggerAttackRelease("G2", "4n");
+        }
+    }
+    
+    function playGhostEatenSound() {
+        if (isAudioContextStarted) {
+            eatenSynth.triggerAttackRelease("C6", "8n", Tone.now(), 0.5);
+            eatenSynth.triggerAttackRelease("G6", "8n", Tone.now() + 0.1, 0.5);
+        }
+    }
+    
+    function playGameOverSound() {
+        if (isAudioContextStarted) {
+            // FIX: NoiseSynth hanya menerima durasi, bukan nada. 
+            // Memperbaiki ini mencegah error 'Invalid argument to cancelAndHoldAtTime: null'.
+            gameOverSynth.triggerAttackRelease(1.5); 
+        }
+    }
+
+
+    // --- Utility Functions ---
+
+    const directions = {
+        'RIGHT': { dx: MOVE_SPEED, dy: 0, angle: 0 },
+        'LEFT': { dx: -MOVE_SPEED, dy: 0, angle: Math.PI },
+        'UP': { dx: 0, dy: -MOVE_SPEED, angle: 3 * Math.PI / 2 },
+        'DOWN': { dx: 0, dy: MOVE_SPEED, angle: Math.PI / 2 }
+    };
+
+    function createGhost(template, startX, startY) {
+        return {
+            ...template,
+            x: startX * TILE_SIZE + centerOffset,
+            y: startY * TILE_SIZE + centerOffset,
+            spawnX: startX * TILE_SIZE + centerOffset,
+            spawnY: startY * TILE_SIZE + centerOffset,
+            dx: GHOST_SPEED_NORMAL,
+            dy: 0,
+            radius: centerOffset - 4,
+            currentDirection: 'RIGHT', 
+            speed: GHOST_SPEED_NORMAL
+        };
+    }
+
+    function getReverseDirection(direction) {
+        switch (direction) {
+            case 'UP': return 'DOWN';
+            case 'DOWN': return 'UP';
+            case 'LEFT': return 'RIGHT';
+            case 'RIGHT': return 'LEFT';
+            default: return null;
+        }
+    }
+
+    function updateDisplay() {
+        document.getElementById('scoreText').innerText = `Skor: ${score}`;
+        document.getElementById('levelText').innerText = `Level: ${currentLevel}`;
+    }
+    
+    function showMessage(text, bgColor, showRestart, isGameOver = false) {
+        messageBox.classList.remove('hidden', 'bg-red-600', 'bg-yellow-500', 'bg-green-500', 'text-white', 'text-gray-900');
+        messageBox.classList.add(bgColor, bgColor.includes('yellow') ? 'text-gray-900' : 'text-white');
+        messageText.innerText = text;
+        
+        restartButton.onclick = () => restartGame(isGameOver);
+        
+        if (showRestart) {
+            restartButton.innerText = isGameOver ? "Mulai Ulang Level 1" : "Mulai Level Berikutnya";
+            restartButton.classList.remove('hidden');
+        } else {
+            restartButton.classList.add('hidden');
+        }
+    }
+
+    function setDirection(direction) {
+        if (!directions[direction]) return;
+
+        pacman.dx = directions[direction].dx;
+        pacman.dy = directions[direction].dy;
+        pacman.angle = directions[direction].angle;
+        currentDirection = direction;
+    }
+
+    function isWall(x, y) {
+        if (!maze || y < 0 || y >= rowCount || x < 0 || x >= colCount) {
+            return true;
+        }
+        return maze[y][x] === 1;
+    }
+
+    function eatPellet() {
+        const gridX = Math.floor(pacman.x / TILE_SIZE);
+        const gridY = Math.floor(pacman.y / TILE_SIZE);
+        const tileValue = maze[gridY]?.[gridX];
+
+        if (tileValue === 2 || tileValue === 3) {
+            maze[gridY][gridX] = 0; // Hapus item
+
+            if (tileValue === 2) { // Titik Makanan biasa
+                score += 10;
+                playPelletSound(); // PANGGIL SUARA PELLET
+            } else if (tileValue === 3) { // Titik Kekuatan (Power Pellet)
+                score += 50;
+                activateFrightenedMode();
+                playPowerPelletSound(); // PANGGIL SUARA POWER PELLET
+            }
+
+            totalPellets--;
+            updateDisplay();
+
+            // Cek Kemenangan / Naik Level
+            if (totalPellets === 0) {
+                isGameRunning = false;
+                pacman.dx = 0;
+                pacman.dy = 0;
+                frightenedTimer = 0; 
+                Tone.Transport.stop(); // Hentikan semua suara latar (jika ada)
+
+                if (currentLevel < MAZES.length - 1) {
+                    currentLevel++;
+                    showMessage(`Level ${currentLevel - 1} Selesai! Skor Anda: ${score}.`, 'bg-green-500', true);
+                    
+                } else {
+                    showMessage('SELAMAT! Anda menyelesaikan semua 5 level!', 'bg-green-500', true, true);
+                    currentLevel = 1; 
+                }
+            }
+        }
+    }
+
+    function activateFrightenedMode() {
+        isFrightened = true;
+        frightenedTimer = FRIGHTENED_DURATION;
+        
+        ghosts.forEach(ghost => {
+            if (!ghost.isEaten) {
+                const reverseDir = getReverseDirection(ghost.currentDirection);
+                if(reverseDir) {
+                    const newDir = directions[reverseDir];
+                    const speedRatio = GHOST_SPEED_FRIGHTENED / MOVE_SPEED;
+                    ghost.dx = newDir.dx * speedRatio;
+                    ghost.dy = newDir.dy * speedRatio;
+                    ghost.currentDirection = reverseDir;
+                }
+                ghost.speed = GHOST_SPEED_FRIGHTENED; 
+            }
+        });
+    }
+
+    function updatePacman() {
+        if (nextDirection) {
+            const tempPacman = { x: pacman.x, y: pacman.y };
+            // Hitung posisi Pac-Man berikutnya berdasarkan nextDirection
+            const dirData = directions[nextDirection];
+            const futureX = pacman.x + dirData.dx;
+            const futureY = pacman.y + dirData.dy;
+            
+            // Cek apakah di tengah ubin saat mencoba berbelok
+            const gridX = Math.floor(pacman.x / TILE_SIZE);
+            const gridY = Math.floor(pacman.y / TILE_SIZE);
+            const isCentered = Math.abs(pacman.x - (gridX * TILE_SIZE + centerOffset)) < MOVE_SPEED &&
+                               Math.abs(pacman.y - (gridY * TILE_SIZE + centerOffset)) < MOVE_SPEED;
+            
+            // Jika Pac-Man mendekati pusat ubin DAN arah baru valid, belok
+            const newGridX = Math.floor(futureX / TILE_SIZE);
+            const newGridY = Math.floor(futureY / TILE_SIZE);
+            
+            if (!isWall(newGridX, newGridY) && (isCentered || currentDirection === null)) {
+                // Saat berbelok di persimpangan, paksa snap ke tengah grid saat ini
+                if (isCentered) {
+                    pacman.x = gridX * TILE_SIZE + centerOffset;
+                    pacman.y = gridY * TILE_SIZE + centerOffset;
+                }
+                setDirection(nextDirection);
+                nextDirection = null;
+            } else if (directions[nextDirection].dx === -pacman.dx && directions[nextDirection].dy === -pacman.dy) {
+                // Izinkan balik arah secara instan
+                setDirection(nextDirection);
+                nextDirection = null;
+            }
+        }
+
+        // Terapkan pergerakan Pac-Man
+        if (pacman.dx !== 0 || pacman.dy !== 0) {
+            const newX = pacman.x + pacman.dx;
+            const newY = pacman.y + pacman.dy;
+
+            const nextGridX = Math.floor(newX / TILE_SIZE);
+            const nextGridY = Math.floor(newY / TILE_SIZE);
+            
+            // Cek Tabrakan Dinding
+            if (isWall(nextGridX, nextGridY)) {
+                pacman.dx = 0;
+                pacman.dy = 0;
+                currentDirection = null;
+                
+                // Snap ke tengah ubin jika berhenti
+                const currentGridX = Math.floor(pacman.x / TILE_SIZE);
+                const currentGridY = Math.floor(pacman.y / TILE_SIZE);
+                pacman.x = currentGridX * TILE_SIZE + centerOffset;
+                pacman.y = currentGridY * TILE_SIZE + centerOffset;
+
+            } else {
+                pacman.x = newX;
+                pacman.y = newY;
+                eatPellet();
+            }
+        }
+    }
+    
+    function updateGhosts() {
+        if (isFrightened) {
+            frightenedTimer -= 1000/60; 
+            if (frightenedTimer <= 0) {
+                isFrightened = false;
+                frightenedTimer = 0;
+                // Hentikan suara power pellet jika sedang berbunyi
+                powerPelletSynth.triggerRelease();
+                
+                ghosts.forEach(ghost => {
+                    if (!ghost.isEaten) {
+                        ghost.speed = GHOST_SPEED_NORMAL;
+                        const speedRatio = GHOST_SPEED_NORMAL / MOVE_SPEED;
+                        ghost.dx = (ghost.dx > 0 ? 1 : ghost.dx < 0 ? -1 : 0) * speedRatio;
+                        ghost.dy = (ghost.dy > 0 ? 1 : ghost.dy < 0 ? -1 : 0) * speedRatio;
+                    }
+                });
+            }
+        }
+
+        ghosts.forEach(ghost => {
+            const currentGridX = Math.floor(ghost.x / TILE_SIZE);
+            const currentGridY = Math.floor(ghost.y / TILE_SIZE);
+
+            if (ghost.isEaten) {
+                const targetX = ghost.spawnX;
+                const targetY = ghost.spawnY;
+                
+                if (Math.abs(ghost.x - targetX) < TILE_SIZE && Math.abs(ghost.y - targetY) < TILE_SIZE) {
+                    ghost.isEaten = false;
+                    ghost.speed = GHOST_SPEED_NORMAL;
+                    ghost.x = targetX;
+                    ghost.y = targetY;
+                    ghost.dx = GHOST_SPEED_NORMAL;
+                    ghost.dy = 0;
+                    return; 
+                }
+
+                const angle = Math.atan2(targetY - ghost.y, targetX - ghost.x);
+                ghost.dx = Math.cos(angle) * 3; 
+                ghost.dy = Math.sin(angle) * 3;
+
+            } else {
+                const isAtCenter = Math.abs(ghost.x % TILE_SIZE - centerOffset) < ghost.speed && 
+                                Math.abs(ghost.y % TILE_SIZE - centerOffset) < ghost.speed;
+
+                if (isAtCenter) {
+                    ghost.x = currentGridX * TILE_SIZE + centerOffset;
+                    ghost.y = currentGridY * TILE_SIZE + centerOffset;
+
+                    const possibleDirections = [];
+                    const allDirections = Object.keys(directions);
+                    const reverseDir = getReverseDirection(ghost.currentDirection); 
+
+                    allDirections.forEach(dirName => {
+                        const dir = directions[dirName];
+                        const nextGridX = currentGridX + (dir.dx > 0 ? 1 : dir.dx < 0 ? -1 : 0);
+                        const nextGridY = currentGridY + (dir.dy > 0 ? 1 : dir.dy < 0 ? -1 : 0);
+                        
+                        // Hantu bisa berbalik jika tidak ada pilihan lain
+                        if (!isWall(nextGridX, nextGridY) && dirName !== reverseDir) {
+                            possibleDirections.push(dirName);
+                        }
+                    });
+
+                    let chosenDirName;
+                    if (possibleDirections.length > 0) {
+                        chosenDirName = possibleDirections[Math.floor(Math.random() * possibleDirections.length)];
+                    } else {
+                        chosenDirName = reverseDir;
+                    }
+
+                    if (chosenDirName) {
+                        const newDir = directions[chosenDirName];
+                        const speedRatio = ghost.speed / MOVE_SPEED;
+                        ghost.dx = newDir.dx * speedRatio;
+                        ghost.dy = newDir.dy * speedRatio;
+                        ghost.currentDirection = chosenDirName;
+                    }
+                }
+            }
+            
+            ghost.x += ghost.dx;
+            ghost.y += ghost.dy;
+        });
+    }
+
+    function checkGhostCollision() {
+        if (!isGameRunning) return;
+
+        ghosts.forEach(ghost => {
+            const distance = Math.sqrt(
+                (pacman.x - ghost.x) ** 2 + (pacman.y - ghost.y) ** 2
+            );
+            
+            if (distance < pacman.radius + ghost.radius) {
+                if (isFrightened && !ghost.isEaten) {
+                    // Pac-Man Makan Hantu
+                    ghost.isEaten = true;
+                    score += 200; 
+                    updateDisplay();
+                    playGhostEatenSound(); // PANGGIL SUARA HANTU DIMAKAN
+
+                } else if (!ghost.isEaten) {
+                    // Game Over (Hantu menang)
+                    handleCollision(ghost.name);
+                }
+            }
+        });
+    }
+
+    function handleCollision(ghostName) {
+        isGameRunning = false;
+        pacman.dx = 0;
+        pacman.dy = 0;
+        powerPelletSynth.triggerRelease(); // Pastikan suara power pellet berhenti
+        playGameOverSound(); // PANGGIL SUARA GAME OVER
+        
+        showMessage(`GAME OVER! Anda tertangkap oleh ${ghostName} di Level ${currentLevel}.`, 'bg-red-600', true, true);
+    }
+    
+    function restartGame(resetScoreAndLevel = false) {
+        if (resetScoreAndLevel) {
+            score = 0;
+            currentLevel = 1;
+        }
+
+        loadLevel(currentLevel);
+        
+        showMessage(`Tekan tombol panah atau sentuh kontrol untuk memulai Level ${currentLevel}!`, 'bg-yellow-500', false);
+        isGameRunning = false; 
+    }
+
+    function loadLevel(levelIndex) {
+        const newMaze = MAZES[levelIndex];
+        if (!newMaze) {
+            console.error(`Peta untuk level ${levelIndex} tidak ditemukan.`);
+            return;
+        }
+
+        maze = newMaze.map(row => [...row]); 
+
+        totalPellets = 0;
+        ghosts = [];
+        let ghostSpawnPoints = [];
+        isFrightened = false;
+        frightenedTimer = 0;
+
+        for (let y = 0; y < rowCount; y++) {
+            for (let x = 0; x < colCount; x++) {
+                if (maze[y][x] === 9) { 
+                    pacman.startGrid.x = x;
+                    pacman.startGrid.y = y;
+                    maze[y][x] = 0; 
+                } else if (maze[y][x] === 2 || maze[y][x] === 3) { 
+                    totalPellets++;
+                } else if (maze[y][x] === 8) { 
+                    ghostSpawnPoints.push({ x: x, y: y });
+                    maze[y][x] = 0; 
+                }
+            }
+        }
+
+        pacman.x = pacman.startGrid.x * TILE_SIZE + centerOffset;
+        pacman.y = pacman.startGrid.y * TILE_SIZE + centerOffset;
+        pacman.dx = 0;
+        pacman.dy = 0;
+        currentDirection = null;
+        nextDirection = null;
+
+        let numGhosts;
+        if (levelIndex <= 2) {
+            numGhosts = 2; 
+        } else if (levelIndex === 3) {
+            numGhosts = 3; 
+        } else {
+            numGhosts = 4; 
+        }
+        
+        for (let i = 0; i < numGhosts; i++) {
+            const template = GHOST_TEMPLATES[i];
+            const spawn = ghostSpawnPoints[i % ghostSpawnPoints.length]; 
+            ghosts.push(createGhost(template, spawn.x, spawn.y));
+        }
+
+        updateDisplay();
+    }
+
+    function drawMaze() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        const blink = Math.floor(frightenedTimer / 100) % 2 === 0; 
+
+        for (let y = 0; y < rowCount; y++) {
+            for (let x = 0; x < colCount; x++) {
+                const tileValue = maze[y][x];
+                const pixelX = x * TILE_SIZE;
+                const pixelY = y * TILE_SIZE;
+
+                if (tileValue === 1) { // Dinding
+                    ctx.fillStyle = WALL_COLOR;
+                    ctx.fillRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = '#63b3ed';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(pixelX, pixelY, TILE_SIZE, TILE_SIZE);
+
+                } else if (tileValue === 2) { // Titik Makanan (Pellet)
+                    ctx.fillStyle = PELLET_COLOR;
+                    ctx.beginPath();
+                    ctx.arc(pixelX + centerOffset, pixelY + centerOffset, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.closePath();
+                } else if (tileValue === 3) { // Titik Kekuatan (Power Pellet)
+                    if (frightenedTimer < 2000 && blink) {
+                        // Tidak digambar
+                    } else {
+                        ctx.fillStyle = PELLET_COLOR;
+                        ctx.beginPath();
+                        ctx.arc(pixelX + centerOffset, pixelY + centerOffset, 7, 0, Math.PI * 2); 
+                        ctx.fill();
+                        ctx.closePath();
+                    }
+                }
+            }
+        }
+    }
+
+    function drawPacman() {
+        // 1. Gambar Badan Pac-Man (Warna Kuning)
+        ctx.fillStyle = pacman.color;
+        ctx.beginPath();
+        
+        const maxMouthAngle = Math.PI / 9; 
+        const minMouthAngle = Math.PI / 36; 
+        
+        let currentMouthAngle;
+        
+        if (pacman.dx === 0 && pacman.dy === 0) {
+             currentMouthAngle = minMouthAngle; // Sedikit tertutup saat diam
+        } else {
+            // Animasi buka/tutup
+            currentMouthAngle = minMouthAngle + (maxMouthAngle - minMouthAngle) * (1 + Math.sin(mouthOpenState)) / 2;
+        }
+
+        const startAngle = pacman.angle + currentMouthAngle;
+        const endAngle = pacman.angle - currentMouthAngle;
+
+        ctx.arc(pacman.x, pacman.y, pacman.radius, startAngle, endAngle, true);
+        
+        ctx.lineTo(pacman.x, pacman.y); 
+        ctx.fill();
+        ctx.closePath();
+        
+        // 2. Gambar Mata Pac-Man (Lingkaran Hitam)
+        if (currentMouthAngle < maxMouthAngle) { 
+            const eyeRadius = 3; 
+            const eyeOffsetDistance = pacman.radius * 0.45; 
+            
+            const eyeAngle = pacman.angle + (3 * Math.PI / 4); 
+            
+            const eyeX = pacman.x + eyeOffsetDistance * Math.cos(eyeAngle);
+            const eyeY = pacman.y + eyeOffsetDistance * Math.sin(eyeAngle);
+            
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(eyeX, eyeY, eyeRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+        }
+    }
+    
+    function drawGhost(ghost) {
+        let ghostColor = ghost.originalColor;
+        
+        if (ghost.isEaten) {
+            // Hantu yang dimakan hanya terlihat mata
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(ghost.x - 5, ghost.y - 5, 3, 0, Math.PI * 2); 
+            ctx.arc(ghost.x + 5, ghost.y - 5, 3, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.closePath();
+
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(ghost.x - 5 + ghost.dx * 0.5, ghost.y - 5 + ghost.dy * 0.5, 1, 0, Math.PI * 2); 
+            ctx.arc(ghost.x + 5 + ghost.dx * 0.5, ghost.y - 5 + ghost.dy * 0.5, 1, 0, Math.PI * 2); 
+            ctx.fill();
+            ctx.closePath();
+            return; 
+        }
+
+        if (isFrightened) {
+            if (frightenedTimer < 2000) {
+                const blink = Math.floor(frightenedTimer / 100) % 2 === 0;
+                ghostColor = blink ? FRIGHTENED_COLOR : 'white';
+            } else {
+                ghostColor = FRIGHTENED_COLOR;
+            }
+        }
+
+        ctx.fillStyle = ghostColor;
+        
+        // Gambar badan hantu
+        ctx.beginPath();
+        ctx.arc(ghost.x, ghost.y, ghost.radius, Math.PI, 0, false);
+        
+        // Garis-garis kaki 
+        ctx.lineTo(ghost.x + ghost.radius, ghost.y + ghost.radius * 0.9);
+        ctx.lineTo(ghost.x + ghost.radius * 0.5, ghost.y + ghost.radius);
+        ctx.lineTo(ghost.x, ghost.y + ghost.radius * 0.9);
+        ctx.lineTo(ghost.x - ghost.radius * 0.5, ghost.y + ghost.radius);
+        ctx.lineTo(ghost.x - ghost.radius, ghost.y + ghost.radius * 0.9);
+        ctx.lineTo(ghost.x - ghost.radius, ghost.y); 
+
+        ctx.fill();
+        ctx.closePath();
+        
+        // Gambar mata
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(ghost.x - 5, ghost.y - 5, 3, 0, Math.PI * 2); 
+        ctx.arc(ghost.x + 5, ghost.y + -5, 3, 0, Math.PI * 2); 
+        ctx.fill();
+        ctx.closePath();
+
+        // Gambar pupil
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        const pupilXOffset = (ghost.dx / GHOST_SPEED_NORMAL) * 1.5;
+        const pupilYOffset = (ghost.dy / GHOST_SPEED_NORMAL) * 1.5;
+        const finalPupilXOffset = isFrightened ? 0 : pupilXOffset;
+        const finalPupilYOffset = isFrightened ? 0 : pupilYOffset;
+
+        ctx.arc(ghost.x - 5 + finalPupilXOffset, ghost.y - 5 + finalPupilYOffset, 1, 0, Math.PI * 2);
+        ctx.arc(ghost.x + 5 + finalPupilXOffset, ghost.y - 5 + finalPupilYOffset, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function gameLoop() {
+        // 1. Pembaruan Logika
+        if (isGameRunning) {
+            updatePacman();
+            updateGhosts(); 
+            checkGhostCollision(); 
+            
+            // Animasi Mulut Pac-Man
+            if (pacman.dx !== 0 || pacman.dy !== 0) {
+                mouthOpenState += mouthSpeed;
+                if (mouthOpenState > 2 * Math.PI) mouthOpenState = 0;
+            } else {
+                mouthOpenState = Math.PI / 2; 
+            }
+        }
+
+        // 2. Penggambaran (Render)
+        drawMaze();
+        drawPacman();
+        
+        ghosts.forEach(drawGhost); 
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // --- Penanganan Input Pengguna ---
+
+    function handleDirectionInput(direction) {
+        startAudioContext(); // Pastikan audio dimulai pada interaksi pertama
+        
+        if (direction) {
+            if (!isGameRunning && totalPellets > 0) {
+                isGameRunning = true;
+                messageBox.classList.add('hidden'); // Sembunyikan kotak pesan saat mulai
+            }
+
+            nextDirection = direction;
+        }
+    }
+
+    // Input Keyboard
+    document.addEventListener('keydown', (event) => {
+        const keyMap = {
+            'ArrowUp': 'UP',
+            'ArrowDown': 'DOWN',
+            'ArrowLeft': 'LEFT',
+            'ArrowRight': 'RIGHT'
+        };
+
+        const direction = keyMap[event.key];
+        
+        if (direction) {
+            event.preventDefault();
+            handleDirectionInput(direction);
+        }
+    });
+    
+    // Input Sentuh/Tombol Konsol (untuk mobile/tablet)
+    const controlButtons = document.querySelectorAll('.control-button');
+    controlButtons.forEach(button => {
+        const direction = button.getAttribute('data-direction');
+
+        // Gunakan touchstart untuk respons sentuhan yang lebih cepat
+        button.addEventListener('touchstart', (event) => {
+            event.preventDefault(); // Mencegah scrolling atau zoom
+            handleDirectionInput(direction);
+        });
+        
+        // Gunakan click sebagai fallback/untuk desktop
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleDirectionInput(direction);
+        });
+    });
+
+
+    // --- Inisialisasi Game ---
+    window.onload = function() {
+        loadLevel(currentLevel); // Mulai dari Level 1
+        gameLoop();              // Mulai Game Loop
+        
+        // Pastikan pesan awal ditampilkan
+        showMessage(`Tekan tombol panah atau sentuh kontrol untuk memulai Level ${currentLevel}!`, 'bg-yellow-500', false);
+    }
+</script>
+
+</body>
+</html>
